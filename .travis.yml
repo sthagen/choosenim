@@ -24,8 +24,16 @@ script:
   - nim c src/choosenim
   - nimble test
   - yes | choosenim stable # Workaround tester overwriting our Nimble install.
+  - export VERSION="$(./bin/choosenim --version | cut -f2,2 -d' ' | sed 's/v//')"
+  - export EXT=""
+  - if [[ "$TRAVIS_OS_NAME" == "windows" ]]; then export EXT=".exe"; fi
+  - export OSNAME="$TRAVIS_OS_NAME"
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then export OSNAME="macosx"; fi
+  - export ARCH="amd64"
+  - mv "bin/choosenim${EXT}" "bin/choosenim-${VERSION}_${OSNAME}_${ARCH}_debug${EXT}"
   - nimble build -d:release
-  - if [[ "$TRAVIS_OS_NAME" != "windows" ]]; then mv bin/choosenim bin/choosenim-$TRAVIS_OS_NAME; fi
+  - mv "bin/choosenim${EXT}" "bin/choosenim-${VERSION}_${OSNAME}_${ARCH}${EXT}"
+  - ls -l bin
 
 notifications:
   irc: "chat.freenode.net#nimbuild"

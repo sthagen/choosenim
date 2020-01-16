@@ -16,6 +16,7 @@ temp_prefix="${TMPDIR:-/tmp}"
 CHOOSE_VERSION="${CHOOSENIM_CHOOSE_VERSION:-stable}"
 
 need_tty=yes
+debug=""
 
 install() {
   get_platform || return 1
@@ -27,7 +28,7 @@ install() {
   case $platform in
     *macosx_amd64* | *linux_amd64* )
       ;;
-    *windows_i386* )
+    *windows_amd64* )
       # Download ZIP for Windows
       local filename="$filename.zip"
       local url="$url.zip"
@@ -43,7 +44,7 @@ install() {
   say "Downloading $filename"
   curl -sSfL "$url" -o "$temp_prefix/$filename"
   chmod +x "$temp_prefix/$filename"
-  if [ "$platform" = "windows_i386" ]; then
+  if [ "$platform" = "windows_amd64" ]; then
     # Extract ZIP for Windows
     unzip -j -o -d $temp_prefix/choosenim $temp_prefix/$filename
     local filename="choosenim/choosenim.exe"
@@ -59,21 +60,21 @@ install() {
     fi
 
     # Install Nim from desired channel.
-    "$temp_prefix/$filename" $CHOOSE_VERSION --firstInstall < /dev/tty
+    "$temp_prefix/$filename" $CHOOSE_VERSION --firstInstall ${debug} < /dev/tty
   else
-    "$temp_prefix/$filename" $CHOOSE_VERSION --firstInstall -y
+    "$temp_prefix/$filename" $CHOOSE_VERSION --firstInstall -y ${debug}
   fi
 
   # Copy choosenim binary to Nimble bin.
   local nimbleBinDir=`"$temp_prefix/$filename" --getNimbleBin`
-  if [ "$platform" = "windows_i386" ]; then
+  if [ "$platform" = "windows_amd64" ]; then
     cp "$temp_prefix/$filename" "$nimbleBinDir/."
   else
     cp "$temp_prefix/$filename" "$nimbleBinDir/choosenim"
   fi
   say "ChooseNim installed in $nimbleBinDir"
   say "You must now ensure that the Nimble bin dir is in your PATH."
-  if [ "$platform" != "windows_i386" ]; then
+  if [ "$platform" != "windows_amd64" ]; then
     say "Place the following line in the ~/.profile or ~/.bashrc file."
     say "    export PATH=$nimbleBinDir:\$PATH"
   fi
@@ -119,8 +120,6 @@ get_platform() {
       ;;
     *mingw* | *msys* )
       local myos="windows"
-      # Force i386 for Windows
-      local ucpu="i386"
       ;;
     *)
       err "unknown operating system: $uos"
@@ -171,10 +170,11 @@ err() {
 
 
 # check if we have to use /dev/tty to prompt the user
-while getopts "y" opt; do
+while getopts "dy" opt; do
   case "$opt" in
     y) need_tty=no
        ;;
+    d) debug="--debug"
   esac
 done
 

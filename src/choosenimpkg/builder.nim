@@ -1,6 +1,6 @@
-import os, strutils, osproc, times
+import os, times
 
-import nimblepkg/[version, cli, tools]
+import nimblepkg/[version, cli]
 import nimblepkg/common as nimble_common
 
 import cliparams, download, utils, common, switcher, telemetry
@@ -73,6 +73,20 @@ proc buildTools() =
     else:
       doCmdRaw("./koch tools -d:release")
 
+# Workaround for #147
+when defined(posix):
+  proc setPermissions() =
+    ## Assumes that CWD contains the compiler
+    let binDir = getCurrentDir() / "bin"
+    for kind, path in walkDir(binDir):
+      if kind == pcFile:
+        setFilePermissions(path,
+                           {fpUserRead, fpUserWrite, fpUserExec,
+                            fpGroupRead, fpGroupExec,
+                            fpOthersRead, fpOthersExec}
+        )
+        display("Info", "Setting rwxr-xr-x permissions: " & path, Message, LowPriority)
+
 proc build*(extractDir: string, version: Version, params: CliParams) =
   # Report telemetry.
   report(initEvent(BuildEvent), params)
@@ -95,6 +109,8 @@ proc build*(extractDir: string, version: Version, params: CliParams) =
   try:
     buildCompiler(params)
     buildTools()
+    when defined(posix):
+      setPermissions() # workaround for #147
     success = true
   except NimbleError as exc:
     # Display error and output from build separately.
@@ -105,6 +121,13 @@ proc build*(extractDir: string, version: Version, params: CliParams) =
     raise newError
   finally:
     if success:
+      # Delete c_code / csources
+      try:
+        removeDir(extractDir / "c_code")
+        removeDir(extractDir / "csources")
+      except Exception as exc:
+        display("Warning:", "Cleaning c_code failed: " & exc.msg, Warning)
+
       # Report telemetry.
       report(initEvent(BuildSuccessEvent), params)
       report(initTiming(BuildTime, $version, startTime, $LabelSuccess), params)

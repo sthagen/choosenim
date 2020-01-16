@@ -4,14 +4,15 @@ type
   ChooseNimError* = object of NimbleError
 
 const
-  chooseNimVersion* = "0.5.0"
+  chooseNimVersion* = "0.5.1"
 
   proxies* = [
       "nim",
       "nimble",
       "nimgrep",
       "nimpretty",
-      "nimsuggest"
+      "nimsuggest",
+      "testament"
     ]
 
   mingwProxies* = [
