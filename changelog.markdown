@@ -1,5 +1,57 @@
 # Choosenim changelog
 
+## 0.7.4 - 20/10/2020
+
+This is a bug fix release to resolve a regression where a spurious `pkgs`
+directory was being created when any choosenim shim was executed.
+
+Once choosenim is upgraded, simply switch Nim versions and the shims will be
+regenerated, solving the issue.
+
+## 0.7.2 - 17/10/2020
+
+This is a bug fix release to resolve a regression caused by changes in Nimble
+which prevented choosenim from finding the Nimble directory.
+
+## 0.7.0 - 16/10/2020
+
+The major new feature is that all builds are now static. There should be no
+runtime dependencies for choosenim anymore.
+
+Changes:
+
+* A critical bug was fixed where choosenim would fail if existng DLLs were present.
+* The `update` command will now always change to the newly installed version.
+  In previous versions this would only happen when the currently selected
+  channel is updated.
+* A new `remove` command is now available.
+* The `nim-gdb` utility is now shimmed.
+* Various small bug fixes, #203 and #195.
+* The `GITHUB_TOKEN` env var will now be used if present for certain actions.
+* Better messages when downloading nightlies.
+
+## 0.6.0 - 06/03/2020
+
+The major new feature is default installation of 64-bit Nim
+binaries on Windows.
+
+Changes:
+* Install latest nightly build of Nim on `choosenim devel` and
+  `choosenim update devel`
+* Install latest devel commit instead of nightlies with the
+  `--latest` flag
+* Git based update for `choosenim update devel --latest` instead
+  of deleting, downloading and bootstrapping from scratch
+* Optionally add `~/.nimble/bin` to PATH on Windows when using the
+  `--firstInstall` flag
+* Fix `choosenim update self` failure on Windows
+* Fix crash where shims could not be rewritten when in use
+* Fix crash on OSX due to an openssl version conflict
+
+See the full list of changes here:
+
+https://github.com/dom96/choosenim/compare/v0.5.1...v0.6.0
+
 ## 0.5.1 - 15/01/2020
 
 Includes multiple bug fixes and minor improvements.

@@ -18,20 +18,35 @@ CHOOSE_VERSION="${CHOOSENIM_CHOOSE_VERSION:-stable}"
 need_tty=yes
 debug=""
 
+has_curl() {
+  command -v curl >/dev/null 2>&1
+}
+
+has_wget() {
+  command -v wget >/dev/null 2>&1
+}
+
 install() {
   get_platform || return 1
   local platform=$RET_VAL
-  local stable_version=`curl -sSfL https://nim-lang.org/choosenim/stable`
+  local stable_version=
+  if has_curl; then
+    stable_version=`curl -sSfL https://nim-lang.org/choosenim/stable`
+  elif has_wget; then
+    stable_version=`wget -qO - https://nim-lang.org/choosenim/stable`
+  fi
   local filename="choosenim-$stable_version"_"$platform"
   local url="$url_prefix"v"$stable_version/$filename"
+  local ext=""
 
   case $platform in
     *macosx_amd64* | *linux_amd64* )
       ;;
     *windows_amd64* )
       # Download ZIP for Windows
-      local filename="$filename.zip"
-      local url="$url.zip"
+      local ext=".exe"
+      local filename="$filename$ext"
+      local url="$url$ext"
       ;;
     * )
       say_err "Sorry, your platform ($platform) is not supported by choosenim."
@@ -42,13 +57,12 @@ install() {
   esac
 
   say "Downloading $filename"
-  curl -sSfL "$url" -o "$temp_prefix/$filename"
-  chmod +x "$temp_prefix/$filename"
-  if [ "$platform" = "windows_amd64" ]; then
-    # Extract ZIP for Windows
-    unzip -j -o -d $temp_prefix/choosenim $temp_prefix/$filename
-    local filename="choosenim/choosenim.exe"
+  if has_curl; then
+    curl -sSfL "$url" -o "$temp_prefix/$filename"
+  elif has_wget; then
+    wget -qO "$temp_prefix/$filename" "$url"
   fi
+  chmod +x "$temp_prefix/$filename"
 
   if [ "$need_tty" = "yes" ]; then
     # The installer is going to want to ask for confirmation by
@@ -67,16 +81,18 @@ install() {
 
   # Copy choosenim binary to Nimble bin.
   local nimbleBinDir=`"$temp_prefix/$filename" --getNimbleBin`
-  if [ "$platform" = "windows_amd64" ]; then
-    cp "$temp_prefix/$filename" "$nimbleBinDir/."
-  else
-    cp "$temp_prefix/$filename" "$nimbleBinDir/choosenim"
-  fi
+  cp "$temp_prefix/$filename" "$nimbleBinDir/choosenim$ext"
   say "ChooseNim installed in $nimbleBinDir"
   say "You must now ensure that the Nimble bin dir is in your PATH."
   if [ "$platform" != "windows_amd64" ]; then
     say "Place the following line in the ~/.profile or ~/.bashrc file."
     say "    export PATH=$nimbleBinDir:\$PATH"
+    case "$SHELL" in
+      *fish*)
+      say "Running fish shell?"
+      say "set -ga fish_user_paths $nimbleBinDir"
+    ;;
+    esac
   fi
 }
 

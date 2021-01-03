@@ -7,15 +7,17 @@ import nimblepkg/common as nimbleCommon
 from nimblepkg/packageinfo import getNameVersion
 
 import choosenimpkg/[download, builder, switcher, common, cliparams, versions]
-import choosenimpkg/[utils, channel, telemetry]
+import choosenimpkg/[utils, channel, ssl, telemetry]
 
 when defined(windows):
   import choosenimpkg/env
 
+  import times
+
 proc installVersion(version: Version, params: CliParams) =
   let
     extractDir = params.getInstallationDir(version)
-    updated = gitUpdate(version, extractDir)
+    updated = gitUpdate(version, extractDir, params)
 
   if not updated:
     # Install the requested version.
@@ -32,7 +34,7 @@ proc installVersion(version: Version, params: CliParams) =
     # directory in order to let `koch` know that it should download a "devel"
     # Nimble.
     if version.isSpecial:
-      gitInit(version, extractDir)
+      gitInit(version, extractDir, params)
 
   # Build the compiler
   build(extractDir, version, params)
@@ -48,16 +50,39 @@ proc chooseVersion(version: string, params: CliParams) =
       let path = downloadMingw(params)
       extract(path, getMingwPath(params))
     else:
-      raise newException(ChooseNimError,
-                         "No C compiler found. Nim compiler requires a C compiler.\n" &
-                         "Install clang or gcc using your favourite package manager.")
+      let binName =
+        when defined(macosx):
+          "clang"
+        else:
+          "gcc"
+
+      raise newException(
+        ChooseNimError,
+        "No C compiler found. Nim compiler requires a C compiler.\n" &
+        "Install " & binName & " using your favourite package manager."
+      )
 
   # Verify that DLLs (openssl primarily) are installed.
   when defined(windows):
     if params.needsDLLInstall():
       # Install DLLs.
-      let path = downloadDLLs(params)
-      extract(path, getBinDir(params))
+      let
+        path = downloadDLLs(params)
+        tempDir = getTempDir() / "choosenim-dlls"
+        binDir = getBinDir(params)
+      removeDir(tempDir)
+      createDir(tempDir)
+      extract(path, tempDir)
+      for kind, path in walkDir(tempDir, relative = true):
+        if kind == pcFile:
+          try:
+            if not fileExists(binDir / path) or
+              getLastModificationTime(binDir / path) < getLastModificationTime(tempDir / path):
+              moveFile(tempDir / path, binDir / path)
+              display("Info:", "Copied '$1' to '$2'" % [path, binDir], priority = HighPriority)
+          except:
+            discard
+      removeDir(tempDir)
 
   if not params.isVersionInstalled(version):
     installVersion(version, params)
@@ -88,7 +113,7 @@ proc updateSelf(params: CliParams) =
   display("Updating", "choosenim", priority = HighPriority)
 
   let version = getChannelVersion("self", params, live=true).newVersion
-  if version <= chooseNimVersion.newVersion:
+  if not params.force and version <= chooseNimVersion.newVersion:
     display("Info:", "Already up to date at version " & chooseNimVersion,
             Success, HighPriority)
     return
@@ -137,6 +162,7 @@ proc update(params: CliParams) =
   if not canUpdate(version, params):
     display("Info:", "Already up to date at version " & $version,
             Success, HighPriority)
+    pinChannelVersion(channel, $version, params)
     if getSelectedVersion(params) != version:
       switchTo(version, params)
     return
@@ -151,10 +177,8 @@ proc update(params: CliParams) =
 
   display("Updated", "to " & $version, Success, HighPriority)
 
-  # If the currently selected channel is the one that was updated, switch to
-  # the new version.
-  if getCurrentChannel(params) == channel:
-    switchTo(version, params)
+  # Always switch to the updated version.
+  switchTo(version, params)
 
 proc show(params: CliParams) =
   let channel = getCurrentChannel(params)
@@ -248,6 +272,29 @@ proc versions(params: CliParams) =
         display("", $version & isLatestTag(params, version), priority = HighPriority)
     echo ""
 
+proc remove(params: CliParams) =
+  if params.commands.len != 2:
+    raise newException(ChooseNimError,
+                       "Expected 1 parameter to 'remove' command")
+
+  let version = params.commands[1].newVersion
+
+  let isInstalled = isVersionInstalled(params, version)
+  if not isInstalled:
+    raise newException(ChooseNimError,
+                       "Version $1 is not installed." % $version)
+
+  if version == getCurrentVersion(params):
+    raise newException(ChooseNimError,
+                       "Cannot remove current version.")
+
+  let extractDir = params.getInstallationDir(version)
+  removeDir(extractDir)
+
+  display("Info:", "Removed version " & $version,
+          Success, HighPriority)
+
+
 proc performAction(params: CliParams) =
   # Report telemetry.
   report(initEvent(ActionEvent), params)
@@ -259,6 +306,8 @@ proc performAction(params: CliParams) =
     show(params)
   of "versions":
     versions(params)
+  of "remove":
+    remove(params)
   else:
     choose(params)
 

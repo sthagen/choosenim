@@ -1,8 +1,8 @@
 # Copyright (C) Dominik Picheta. All rights reserved.
 # BSD-3-Clause License. Look at license.txt for more info.
-import osproc, streams, unittest, strutils, os, sequtils, future
+import osproc, streams, unittest, strutils, os, sequtils, sugar
 
-var rootDir = getCurrentDir().parentDir()
+var rootDir = getCurrentDir()
 var exePath = rootDir / "bin" / addFileExt("choosenim", ExeExt)
 var nimbleDir = rootDir / "tests" / "nimbleDir"
 var choosenimDir = rootDir / "tests" / "choosenimDir"
@@ -107,9 +107,13 @@ proc hasLine(lines: seq[string], line: string): bool =
     if i.normalize.strip() == line.normalize(): return true
 
 test "can compile choosenim":
-  cd "..":
-    let (_, exitCode) = exec("build", exe="nimble", global=true, liveOutput=true)
-    check exitCode == QuitSuccess
+  var args = @["build"]
+  when defined(release):
+    args.add "-d:release"
+  when defined(staticBuild):
+    args.add "-d:staticBuild"
+  let (_, exitCode) = exec(args, exe="nimble", global=true, liveOutput=true)
+  check exitCode == QuitSuccess
 
 test "refuses invalid path":
   beginTest()
@@ -159,6 +163,24 @@ test "can choose v0.16.0":
     check exitCode == QuitSuccess
     check inLines(output.processOutput, "v0.8.2")
 
+test "cannot remove current v0.16.0":
+  # skip prev test cleanup to have version to remove (thus faster ci/cd)
+  # TODO: clean state, prepare data for test, do not rely on prev test state
+  #beginTest()
+  block:
+    let (output, exitCode) = exec(["remove", "0.16.0"], liveOutput=true)
+    check exitCode == QuitFailure
+
+    check inLines(output.processOutput, "Cannot remove current version.")
+
+test "cannot remove not installed v0.16.0":
+  beginTest()
+  block:
+    let (output, exitCode) = exec(["remove", "0.16.0"], liveOutput=true)
+    check exitCode == QuitFailure
+
+    check inLines(output.processOutput, "Version 0.16.0 is not installed.")
+
 when defined(linux):
   test "linux binary install":
     beginTest()
@@ -175,7 +197,7 @@ when defined(linux):
 test "can update devel with git":
   beginTest()
   block:
-    let (output, exitCode) = exec("devel", liveOutput=true)
+    let (output, exitCode) = exec(@["devel", "--latest"], liveOutput=true)
     check exitCode == QuitSuccess
 
     check inLines(output.processOutput, "extracting")
@@ -184,7 +206,7 @@ test "can update devel with git":
     check inLines(output.processOutput, "building")
 
   block:
-    let (output, exitCode) = exec(@["update", "devel"], liveOutput=true)
+    let (output, exitCode) = exec(@["update", "devel", "--latest"], liveOutput=true)
     check exitCode == QuitSuccess
 
     check not inLines(output.processOutput, "extracting")
@@ -192,3 +214,59 @@ test "can update devel with git":
     check inLines(output.processOutput, "updating")
     check inLines(output.processOutput, "latest changes")
     check inLines(output.processOutput, "building")
+
+test "can install and update nightlies":
+  beginTest()
+  block:
+    # Install nightly
+    let (output, exitCode) = exec("devel", liveOutput=true)
+
+    # Travis runs into Github API limit
+    if not inLines(output.processOutput, "unavailable"):
+      check exitCode == QuitSuccess
+
+      check inLines(output.processOutput, "devel from")
+      check inLines(output.processOutput, "setting")
+      when not defined(macosx):
+        if not inLines(output.processOutput, "recent nightly"):
+          check inLines(output.processOutput, "already built")
+      check inLines(output.processOutput, "to Nim #devel")
+
+      block:
+        # Update nightly
+        let (output, exitCode) = exec(@["update", "devel"], liveOutput=true)
+
+        # Travis runs into Github API limit
+        if not inLines(output.processOutput, "unavailable"):
+          check exitCode == QuitSuccess
+
+          check inLines(output.processOutput, "updating")
+          check inLines(output.processOutput, "devel from")
+          check inLines(output.processOutput, "setting")
+          when not defined(macosx):
+            if not inLines(output.processOutput, "recent nightly"):
+              check inLines(output.processOutput, "already built")
+
+      block:
+        # Update to devel latest
+        let (output, exitCode) = exec(@["update", "devel", "--latest"], liveOutput=true)
+        check exitCode == QuitSuccess
+
+        when not defined(macosx):
+          check not inLines(output.processOutput, "extracting")
+        check not inLines(output.processOutput, "setting")
+        check inLines(output.processOutput, "updating")
+        check inLines(output.processOutput, "latest changes")
+        check inLines(output.processOutput, "building")
+
+test "can update self":
+  # updateSelf() doesn't use options --choosenimDir and --nimbleDir. It's used getAppDir().
+  # This will rewrite $project/bin dir, it's dangerous.
+  # So, this test copy bin/choosenim to test/choosenimDir/choosenim, and use it.
+  beginTest()
+  let testExePath = choosenimDir / extractFilename(exePath)
+  copyFileWithPermissions(exePath, testExePath)
+  block :
+    let (output, exitCode) = exec(["update", "self", "--debug", "--force"], exe=testExePath, liveOutput=true)
+    check exitCode == QuitSuccess
+    check inLines(output.processOutput, "Info: Updated choosenim to version")

@@ -1,4 +1,4 @@
-import httpclient, os, strutils, osproc, uri
+import httpclient, json, os, strutils, osproc, uri
 
 import nimblepkg/[cli, version]
 import nimarchive
@@ -10,8 +10,9 @@ when defined(windows):
 
 proc parseVersion*(versionStr: string): Version =
   if versionStr[0] notin {'#', '\0'} + Digits:
-    let msg = "Invalid version, path or unknown channel. " &
-              "Try 0.16.0, #head, #commitHash, or stable. " &
+    let msg = "Invalid version, path or unknown channel.\n" &
+              "Try 1.0.6, #head, #commitHash, or stable.\n" &
+              "For example: choosenim #head.\n  \n"&
               "See --help for more examples."
     raise newException(ChooseNimError, msg)
 
@@ -105,7 +106,7 @@ proc getLatestCommit*(repo, branch: string): string =
   if git.len != 0:
     var
       cmd = when defined(windows): "cmd /c " else: ""
-    cmd &= git & " ls-remote " & repo & " " & branch
+    cmd &= git.quoteShell & " ls-remote " & repo & " " & branch
 
     let
       (outp, errC) = execCmdEx(cmd)
@@ -116,3 +117,24 @@ proc getLatestCommit*(repo, branch: string): string =
     else:
       display("Warning", outp & "\ngit ls-remote failed", Warning, HighPriority)
 
+proc getNightliesUrl*(parsedContents: JsonNode, arch: int): (string, string) =
+  let os =
+    when defined(windows): "windows"
+    elif defined(linux): "linux"
+    elif defined(macosx): "osx"
+  for jn in parsedContents.getElems():
+    if jn["name"].getStr().contains("devel"):
+      let tagName = jn{"tag_name"}.getStr("")
+      for asset in jn["assets"].getElems():
+        let aname = asset["name"].getStr()
+        let url = asset{"browser_download_url"}.getStr("")
+        if os in aname:
+          when not defined(macosx):
+            if "x" & $arch in aname:
+              result = (url, tagName)
+          else:
+            result = (url, tagName)
+        if result[0].len != 0:
+          break
+    if result[0].len != 0:
+      break

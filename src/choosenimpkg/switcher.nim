@@ -12,6 +12,8 @@ proc compileProxyexe() =
   var cmd = "nim c"
   when defined(release):
     cmd.add " -d:release"
+  when defined(staticBuild):
+    cmd.add " -d:staticBuild"
   cmd.add " proxyexe"
   let (output, exitCode) = gorgeEx(cmd)
   doAssert exitCode == 0, $(output, cmd)
@@ -50,7 +52,7 @@ proc areProxiesInstalled(params: CliParams, proxies: openarray[string]): bool =
 
 proc isDefaultCCInPath*(params: CliParams): bool =
   # Fixes issue #104
-  when defined(OSX):
+  when defined(macosx):
     return findExe("clang") != ""
   else:
     return findExe("gcc") != ""
@@ -135,6 +137,8 @@ proc writeProxy(bin: string, params: CliParams) =
 
   # Check whether this is in the user's PATH.
   let fromPATH = findExe(bin)
+  display("Debug:", "Proxy path: " & proxyPath, priority = DebugPriority)
+  display("Debug:", "findExe: " & fromPATH, priority = DebugPriority)
   if fromPATH == "" and not params.firstInstall:
     let msg =
       when defined(windows):

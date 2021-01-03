@@ -11,6 +11,7 @@ import cliparams, common, telemetry, utils
 
 const
   githubTagReleasesUrl = "https://api.github.com/repos/nim-lang/Nim/tags"
+  githubNightliesReleasesUrl = "https://api.github.com/repos/nim-lang/nightlies/releases"
   githubUrl = "https://github.com/nim-lang/Nim"
   websiteUrl = "http://nim-lang.org/download/nim-$1.tar.xz"
   csourcesUrl = "https://github.com/nim-lang/csources"
@@ -53,6 +54,15 @@ proc showBar(fraction: float, speed: BiggestInt) =
                   $(speed div 1000)
                 ])
   stdout.flushFile()
+
+proc addGithubAuthentication(url: string): string =
+  let ghtoken = getEnv("GITHUB_TOKEN")
+  if ghtoken == "":
+    return url
+  else:
+    display("Info:", "Using the 'GITHUB_TOKEN' environment variable for GitHub API Token.",
+            priority=HighPriority)
+    return url.replace("https://api.github.com", "https://" & ghtoken & "@api.github.com")
 
 when defined(curl):
   proc checkCurl(code: Code) =
@@ -165,6 +175,9 @@ proc downloadFileNim(url, outputPath: string) =
   client.downloadFile(url, outputPath)
 
 proc downloadFile*(url, outputPath: string, params: CliParams) =
+  # For debugging.
+  display("GET:", url, priority = DebugPriority)
+
   # Telemetry
   let startTime = epochTime()
 
@@ -200,27 +213,48 @@ proc needsDownload(params: CliParams, downloadUrl: string,
   ## The `outputPath` argument is filled with the valid download path.
   result = true
   outputPath = params.getDownloadPath(downloadUrl)
-  if outputPath.existsFile():
+  if outputPath.fileExists():
     # TODO: Verify sha256.
     display("Info:", "$1 already downloaded" % outputPath,
             priority=HighPriority)
     return false
 
+proc retrieveUrl*(url: string): string
 proc downloadImpl(version: Version, params: CliParams): string =
   let arch = getGccArch(params)
   if version.isSpecial():
-    let
-      commit = getLatestCommit(githubUrl, "devel")
-      archive = if commit.len != 0: commit else: "devel"
+    var reference, url = ""
+    if $version in ["#devel", "#head"] and not params.latest:
+      # Install nightlies by default for devel channel
+      try:
+        let rawContents = retrieveUrl(githubNightliesReleasesUrl.addGithubAuthentication())
+        let parsedContents = parseJson(rawContents)
+        (url, reference) = getNightliesUrl(parsedContents, arch)
+        if url.len == 0:
+          display(
+            "Warning", "Recent nightly release not found, installing latest devel commit.",
+            Warning, HighPriority
+          )
+        reference = if reference.len == 0: "devel" else: reference
+      except HTTPRequestError:
+        # Unable to get nightlies release json from github API, fallback
+        # to `choosenim devel --latest`
+        display("Warning", "Nightlies build unavailable, building latest commit",
+                Warning, HighPriority)
+
+    if url.len == 0:
+      let
+        commit = getLatestCommit(githubUrl, "devel")
+        archive = if commit.len != 0: commit else: "devel"
       reference =
         case normalize($version)
         of "#head":
           archive
         else:
           ($version)[1 .. ^1]
+      url = $(parseUri(githubUrl) / (dlArchive % reference))
     display("Downloading", "Nim $1 from $2" % [reference, "GitHub"],
             priority = HighPriority)
-    let url = $(parseUri(githubUrl) / (dlArchive % reference))
     var outputPath: string
     if not needsDownload(params, url, outputPath): return outputPath
 
@@ -328,8 +362,9 @@ proc retrieveUrl*(url: string): string =
 
     display("Curl", res, priority = DebugPriority)
 
-    doAssert responseCode == 200,
-             "Expected HTTP code $1 got $2 for $3" % [$200, $responseCode, url]
+    if responseCode != 200:
+      raise newException(HTTPRequestError,
+             "Expected HTTP code $1 got $2 for $3" % [$200, $responseCode, url])
 
     return res
   else:
@@ -338,7 +373,7 @@ proc retrieveUrl*(url: string): string =
     return client.getContent(url)
 
 proc getOfficialReleases*(params: CliParams): seq[Version] =
-  let rawContents = retrieveUrl(githubTagReleasesUrl)
+  let rawContents = retrieveUrl(githubTagReleasesUrl.addGithubAuthentication())
   let parsedContents = parseJson(rawContents)
   let cutOffVersion = newVersion("0.16.0")
 
@@ -353,8 +388,8 @@ proc getOfficialReleases*(params: CliParams): seq[Version] =
 template isDevel*(version: Version): bool =
   $version in ["#head", "#devel"]
 
-proc gitUpdate*(version: Version, extractDir: string): bool =
-  if version.isDevel():
+proc gitUpdate*(version: Version, extractDir: string, params: CliParams): bool =
+  if version.isDevel() and params.latest:
     let git = findExe("git")
     if git.len != 0 and fileExists(extractDir / ".git" / "config"):
       result = true
@@ -366,12 +401,12 @@ proc gitUpdate*(version: Version, extractDir: string): bool =
 
       display("Fetching", "latest changes", priority = HighPriority)
       for cmd in [" fetch --all", " reset --hard origin/devel"]:
-        var (outp, errC) = execCmdEx(git & cmd)
+        var (outp, errC) = execCmdEx(git.quoteShell & cmd)
         if errC != QuitSuccess:
           display("Warning:", "git" & cmd & " failed: " & outp, Warning, priority = HighPriority)
           return false
 
-proc gitInit*(version: Version, extractDir: string) =
+proc gitInit*(version: Version, extractDir: string, params: CliParams) =
   createDir(extractDir / ".git")
   if version.isDevel():
     let git = findExe("git")
@@ -384,14 +419,14 @@ proc gitInit*(version: Version, extractDir: string) =
       var init = true
       display("Setting", "up git repository", priority = HighPriority)
       for cmd in [" init", " remote add origin https://github.com/nim-lang/nim"]:
-        var (outp, errC) = execCmdEx(git & cmd)
+        var (outp, errC) = execCmdEx(git.quoteShell & cmd)
         if errC != QuitSuccess:
           display("Warning:", "git" & cmd & " failed: " & outp, Warning, priority = HighPriority)
           init = false
           break
 
       if init:
-        discard gitUpdate(version, extractDir)
+        discard gitUpdate(version, extractDir, params)
 
 when isMainModule:
 

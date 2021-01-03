@@ -29,15 +29,24 @@ Nim Compiler Version 1.0.0 [Linux: amd64]
 ### Windows
 
 Download the latest Windows version from the
-[releases](https://github.com/dom96/choosenim/releases) page.
+[releases](https://github.com/dom96/choosenim/releases) page (the .zip file, for example here is [``v0.7.4``](https://github.com/dom96/choosenim/releases/download/v0.7.4/choosenim-0.7.4_windows_amd64.zip)).
 
 Extract the zip archive and run the ``runme.bat`` script. Follow any on screen
 prompts and enjoy your new Nim and choosenim installation.
+
+----
+
+There is also a third-party project to provide an installer for choosenim,
+you can find it [here](https://gitlab.com/ArMour85/choosenim-setup) (note that 
+this isn't vetted by the Nim team so you do so at your own risk).
 
 ### Unix
 
 ```
 curl https://nim-lang.org/choosenim/init.sh -sSf | sh
+```
+```
+wget -qO - https://nim-lang.org/choosenim/init.sh | sh
 ```
 
 **Optional:** You can specify the initial version you would like the `init.sh`
@@ -77,6 +86,7 @@ install them accordingly.
 | C compiler | *Downloaded automatically*    |      gcc/clang     |      gcc/clang        |
 | OpenSSL    |          >= 1.0.2k            |      >= 1.0.2k     |         N/A           |
 | curl       |             N/A               |         N/A        | Any recent version    |
+| wget       |             N/A               |      >= 1.20.1     |      >= 1.20.1        |
 
 \* Many macOS dependencies should already be installed. You may need to install
    a C compiler however. More information on dependencies is available

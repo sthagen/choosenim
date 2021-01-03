@@ -15,7 +15,8 @@ type
     nimbleOptions*: Options
     analytics*: AsyncAnalytics
     pendingReports*: int ## Count of pending telemetry reports.
-
+    force*: bool
+    latest*: bool
 
 let doc = """
 choosenim: The Nim toolchain installer.
@@ -31,15 +32,20 @@ Example:
   choosenim stable
     Installs (if necessary) Nim from the stable channel (latest stable release)
     and then selects it.
-  choosenim #head
-    Installs (if necessary) and selects the latest current commit of Nim.
-    Warning: Your shell may need quotes around `#head`: choosenim "#head".
+  choosenim devel [--latest]
+    Installs (if necessary) and selects the most recent nightly build of Nim.
+    The '--latest' flag selects and builds the latest commit in the devel branch
   choosenim ~/projects/nim
     Selects the specified Nim installation.
   choosenim update stable
     Updates the version installed on the stable release channel.
+  choosenim update devel [--latest]
+    Updates to the most recent nightly build of Nim.
+    The '--latest' flag updates and builds the latest commit in the devel branch
   choosenim versions [--installed]
     Lists the available versions of Nim that choosenim has access to.
+  choosenim remove 1.0.6
+    Removes (if installed) version 1.0.6 of Nim.
 
 Channels:
   stable
@@ -56,6 +62,13 @@ Commands:
   versions  [--installed]        Lists available versions of Nim, passing
                                  `--installed` only displays versions that
                                  are installed locally (no network requests).
+  remove    <version>            Removes specified version (if installed).
+
+Environment variables:
+  GITHUB_TOKEN          GitHub API Token. Some actions use the GitHub API.
+                        To avoid anonymous-access rate limits, supply a token
+                        generated at https://github.com/settings/tokens/new
+                        with the `public_repo` scope.
 
 Options:
   -h --help             Show this output.
@@ -163,6 +176,7 @@ proc newCliParams*(proxyExeMode: bool): CliParams =
     result.nimbleOptions = initOptions()
     if not proxyExeMode:
       result.nimbleOptions.config = parseConfig()
+      setNimbleDir(result.nimbleOptions)
   except NimbleQuit:
     discard
 
@@ -193,6 +207,8 @@ proc parseCliParams*(params: var CliParams, proxyExeMode = false) =
       of "firstinstall": params.firstInstall = true
       of "y", "yes": params.nimbleOptions.forcePrompts = forcePromptYes
       of "installed": params.onlyInstalled = true
+      of "force", "f": params.force = true
+      of "latest", "l": params.latest = true
       else:
         if not proxyExeMode:
           raise newException(ChooseNimError, "Unknown flag: --" & key)
